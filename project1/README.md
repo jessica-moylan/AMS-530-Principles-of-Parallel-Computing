@@ -1,7 +1,6 @@
 # Project 1 Question 2:
 
 ## Project Description
----
 
 Goal: With parallel computing the sequence to which processors deliver messages are non-deterministic.
 There are cases however, where messages sent must be deterministic. So the project is trying to determine a way
@@ -16,7 +15,7 @@ Hello from Processor 9
 ```
 
 ## Program Structure
----
+
 Files included on this project
 - ordered-processors.py : This is the main project code where the code logic is
 - project1output.txt : An example of the ordered output from the code
@@ -45,18 +44,16 @@ completes.
 
 
 ## Results
----
 
 Using COMM.send and COMM.recv I was able to create a program that determinstically returns the processors in order.
 More information on the exact output can be found in `project1output.txt`
 
 ## Analysis
----
 
 The program is quite efficent as it proceeds as soon as the processor before it recieves its data resulting 
 in a deterministic output.
 
 
 ## Additional Notes
----
+
 The `order-processors.py` file contains notes and comments about the code while learning about MPI 

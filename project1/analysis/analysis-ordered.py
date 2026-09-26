@@ -1,29 +1,26 @@
 from mpi4py import MPI
 
 COMM = MPI.COMM_WORLD
-rank = COMM.Get_rank() # gets the processor ID
-size = COMM.Get_size() # says how many processors are being used (defined when starting the program) with slurm
+rank = COMM.Get_rank() 
+size = COMM.Get_size()
 
+# Makes sure that all processors reach this point before starting the timer
 COMM.Barrier()
 start_time = MPI.Wtime()
 
-data = None # we are not trasmitting data, so this is just a placeholder
+data = None 
 if rank == 0:
     print(f"Hello from Processor {rank}")
-    # Send a message to other processos that 0 has arrived
 
-    # COMM.send(data, dest, tag=0 )
-    # data is what we are sending, not important for this problem
-    # dest is the rank of the processor we are sending the data to
-    COMM.send(data, dest=rank + 1)  # Send a message to the next processor in order
+    COMM.send(data, dest=rank + 1)  
 else:
     COMM.recv(source=rank-1)
     print(f"Hello from Processor {rank}")
 
-    # Forward signal to the next processor IF this isn't the last rank
     if rank < size - 1:
         COMM.send(data, dest=rank + 1)
 
+# Makes sure that all processors reach this point before stopping the timer
 COMM.Barrier()
 end_time = MPI.Wtime()
 

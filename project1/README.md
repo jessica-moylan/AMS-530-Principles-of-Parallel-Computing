@@ -56,7 +56,7 @@ For examples of outputs with a different number of processors you can check out 
 ## Analysis
 In addition to the main code, I looked to see how, when using different number of processors, how the time to complete the process would change. As expected, the time to finish, was more or less linear to the amount of processors used. This increase in time between the nuber of processors is due to the increased latency that is created due to the communication between processors
 
-![Graph](project1/analysis/processor_time_plot.png)
+![Graph](analysis/processor_time_plot.png)
 
 Due to the nature of parallel computing, processors will be activated and complete their processing at different times, in part to the latency due to the communication between the nodes. 
 

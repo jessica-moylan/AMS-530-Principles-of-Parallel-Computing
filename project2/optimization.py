@@ -22,6 +22,7 @@ def equation(x, y):
 def evaluate(inputs):
   return {"f": float(equation(inputs["x"], inputs["y"]))}
 
+
 def select_maxmin_dispersion(candidates, k=20):
   """Select k candidates that are maximally spread apart."""
   if len(candidates) <= k:
@@ -39,10 +40,10 @@ def select_maxmin_dispersion(candidates, k=20):
 
 
 def split_into_grid(z):
-  """Split the grid into even sections, one section per processor """
+  """Split the grid into even sections, one section per processor"""
   n = math.isqrt(z)
   if n * n != z:
-    raise ValueError("Number of processors")
+    raise ValueError("Number of processors must be a perfect square.")
 
   edges = np.linspace(-1, 1, n + 1)
   sections = []
@@ -78,7 +79,7 @@ vocs = VOCS(
 
 generator = LatinHypercubeGenerator(vocs=vocs, batch_size=2048)
 
-# Use the Latin Hypercube for sampling the entire sample space
+# Use the Latin Hypercube for sampling the subdomain
 X = Xopt(vocs=vocs, generator=generator, evaluator=evaluator)
 
 for _ in range(2048):
@@ -104,27 +105,34 @@ gathered_data_list = COMM.gather(X_opt.data, root=0)
 COMM.Barrier()
 
 if rank == 0:
-  # Collect all of the data so across the entire sample sapce, the zeros can be selected together
   df = pd.concat(gathered_data_list, ignore_index=True)
 
-  scan_grid = np.linspace(-1, 1, 1201)
-  scan_xx, scan_yy = np.meshgrid(scan_grid, scan_grid)
-  scan_values = equation(scan_xx, scan_yy)
-
-  # The only possible zeros we are considering is when the f value is under 0.0001
   threshold = 0.001
-  candidate_zeros = np.column_stack((scan_xx[scan_values < threshold], scan_yy[scan_values < threshold]))
+  candidates_df = df[df["f"] < threshold]
+  candidate_zeros = candidates_df[["x", "y"]].to_numpy()
 
-  # Select 20 zeros that are the most spread apart
+  if len(candidate_zeros) < 20:
+    print(
+        f"Warning: Only found {len(candidate_zeros)} candidates under threshold"
+        " in Xopt data. Consider adjusting threshold."
+    )
+    # If not enough points make the threshold take the lowest 50 points overall
+    candidate_zeros = (
+        df.nsmallest(50, "f")[["x", "y"]].to_numpy()
+        if len(candidate_zeros) == 0
+        else candidate_zeros
+    )
+
+  # 3. Select 20 zeros that are the most spread apart
   spread_zeros = select_maxmin_dispersion(candidate_zeros, k=20)
 
   # Plotting results
   x_grid = np.linspace(-1, 1, 250)
   y_grid = np.linspace(-1, 1, 250)
-  X, Y = np.meshgrid(x_grid, y_grid)
-  Z = equation(X, Y)
+  X_mesh, Y_mesh = np.meshgrid(x_grid, y_grid)
+  Z = equation(X_mesh, Y_mesh)
   fig, ax = plt.subplots(figsize=(9, 7))
-  contour = ax.contourf(X, Y, Z, levels=50, cmap="viridis")
+  contour = ax.contourf(X_mesh, Y_mesh, Z, levels=50, cmap="viridis")
   plt.colorbar(contour, label="f(x, y)")
 
   n = math.isqrt(size)
@@ -133,11 +141,6 @@ if rank == 0:
   for edge in edges:
     ax.axhline(edge, color="white", linestyle="--", linewidth=1.2, alpha=0.8)
     ax.axvline(edge, color="white", linestyle="--", linewidth=1.2, alpha=0.8)
-
-  grid_sections = split_into_grid(size)
-  for idx, sec in enumerate(grid_sections):
-    cx = (sec["x"][0] + sec["x"][1]) / 2
-    cy = (sec["y"][0] + sec["y"][1]) / 2
 
   ax.scatter(
       spread_zeros[:, 0],
@@ -151,6 +154,6 @@ if rank == 0:
 
   ax.set_xlabel("x")
   ax.set_ylabel("y")
-  ax.set_title(f"20 Maximally Spread Zeros")
-  plt.savefig("output_plot.png", dpi=300, bbox_inches="tight")
+  ax.set_title("20 Maximally Spread Zeros")
+  plt.savefig("plot_4.png", dpi=300, bbox_inches="tight")
   plt.close()

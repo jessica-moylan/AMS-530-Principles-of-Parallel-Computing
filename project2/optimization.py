@@ -5,8 +5,9 @@ import numpy as np
 import pandas as pd
 from scipy.spatial.distance import cdist
 from xopt import VOCS, Evaluator, Xopt
-from xopt.generators.bayesian import UpperConfidenceBoundGenerator
+from xopt.generators.bayesian import UpperConfidenceBoundGenerator, BayesianExplorationGenerator
 from xopt.generators.scipy.latin_hypercube import LatinHypercubeGenerator
+from xopt.generators.ga.cnsga import CNSGAGenerator
 
 COMM = MPI.COMM_WORLD
 rank = COMM.Get_rank()
@@ -57,6 +58,22 @@ def split_into_grid(z):
 
   return sections
 
+def space_filter_data(df, min_dist=0.05):
+    """Filters data so no two points are closer than min_dist in parameter space."""
+    kept_rows = []
+    points = df[["x", "y"]].to_numpy()
+
+    for i, pt in enumerate(points):
+        if not kept_rows:
+            kept_rows.append(i)
+            continue
+
+        # Distance to previously accepted points
+        dists = np.linalg.norm(points[kept_rows] - pt, axis=1)
+        if np.all(dists >= min_dist):
+            kept_rows.append(i)
+
+    return df.iloc[kept_rows]
 
 if rank == 0:
   grid_sections = split_into_grid(size)
@@ -86,19 +103,29 @@ for _ in range(2048):
   X.step()
 
 vocs_opt = VOCS(
-    variables={"x": [x1, x2], "y": [y1, y2]}, objectives={"f": "MINIMIZE"}
+    variables={"x": [x1, x2], "y": [y1, y2]},
+    objectives={"f": "EXPLORE"},
+    constraints={"f": ["LESS_THAN", 0.01]}
 )
 
-bo_generator = UpperConfidenceBoundGenerator(vocs=vocs_opt, beta=2.0)
+ga_generator = BayesianExplorationGenerator(
+    vocs=vocs_opt
+)
+
+# Set parameters as attributes afterwards
+ga_generator.n_candidates = 10
+
+filtered_data = space_filter_data(X.data, min_dist=0.05)
 
 X_opt = Xopt(
-    vocs=vocs_opt, generator=bo_generator, evaluator=evaluator, data=X.data
+    vocs=vocs_opt, generator=ga_generator, evaluator=evaluator, data=filtered_data
 )
 
-# Training the model
-for i in range(6):
-  X_opt.generator.train_model()
-  X_opt.step()
+# Run 10 iterations of the model training
+for i in range(10):
+    print(f"Iteration {i+1}")
+    X_opt.generator.train_model()
+    X_opt.step()
 
 gathered_data_list = COMM.gather(X_opt.data, root=0)
 
@@ -107,32 +134,26 @@ COMM.Barrier()
 if rank == 0:
   df = pd.concat(gathered_data_list, ignore_index=True)
 
-  threshold = 0.001
-  candidates_df = df[df["f"] < threshold]
-  candidate_zeros = candidates_df[["x", "y"]].to_numpy()
+  threshold = 0.005
+  candidate_zeros = df[df["f"] < threshold][["x", "y"]].to_numpy()
 
-  if len(candidate_zeros) < 20:
-    print(
-        f"Warning: Only found {len(candidate_zeros)} candidates under threshold"
-        " in Xopt data. Consider adjusting threshold."
-    )
-    # If not enough points make the threshold take the lowest 50 points overall
-    candidate_zeros = (
-        df.nsmallest(50, "f")[["x", "y"]].to_numpy()
-        if len(candidate_zeros) == 0
-        else candidate_zeros
-    )
+  if len(candidate_zeros) < 30:
+     candidate_zeros = df.nsmallest(100, "f")[["x", "y"]].to_numpy()
 
-  # 3. Select 20 zeros that are the most spread apart
-  spread_zeros = select_maxmin_dispersion(candidate_zeros, k=20)
+# Pick 20 widely spread zeros
+  spread_20_zeros = select_maxmin_dispersion(candidate_zeros, k=20)
 
-  # Plotting results
+
+# --- Plotting ---
+  fig, ax = plt.subplots(figsize=(8, 6))
+
+# Background contour plot
   x_grid = np.linspace(-1, 1, 250)
   y_grid = np.linspace(-1, 1, 250)
-  X_mesh, Y_mesh = np.meshgrid(x_grid, y_grid)
-  Z = equation(X_mesh, Y_mesh)
-  fig, ax = plt.subplots(figsize=(9, 7))
-  contour = ax.contourf(X_mesh, Y_mesh, Z, levels=50, cmap="viridis")
+  XX, YY = np.meshgrid(x_grid, y_grid)
+  ZZ = equation(XX, YY)
+
+  contour = ax.contourf(XX, YY, ZZ, levels=50, cmap="viridis")
   plt.colorbar(contour, label="f(x, y)")
 
   n = math.isqrt(size)
@@ -142,14 +163,19 @@ if rank == 0:
     ax.axhline(edge, color="white", linestyle="--", linewidth=1.2, alpha=0.8)
     ax.axvline(edge, color="white", linestyle="--", linewidth=1.2, alpha=0.8)
 
+# Plot all sampled points as small translucent dots
+  ax.scatter(df["x"], df["y"], c="white", alpha=0.2, s=8, label="Sampled Points")
+
+# Plot the 20 maximally separated zeros
   ax.scatter(
-      spread_zeros[:, 0],
-      spread_zeros[:, 1],
-      c="red",
-      marker="*",
-      s=120,
-      edgecolors="black",
-      linewidths=0.5,
+     spread_20_zeros[:, 0],
+     spread_20_zeros[:, 1],
+     c="red",
+     marker="*",
+     s=120,
+     edgecolors="black",
+     linewidths=0.5,
+     label="20 Spread Zeros"
   )
 
   ax.set_xlabel("x")

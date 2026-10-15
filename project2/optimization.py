@@ -1,17 +1,20 @@
 import math
 import matplotlib.pyplot as plt
-from mpi4py import MPI
 import numpy as np
 import pandas as pd
-from scipy.spatial.distance import cdist
+from matplotlib.patches import Rectangle
+from mpi4py import MPI
 from xopt import VOCS, Evaluator, Xopt
-from xopt.generators.bayesian import UpperConfidenceBoundGenerator, BayesianExplorationGenerator
+from xopt.generators.bayesian import BayesianExplorationGenerator
 from xopt.generators.scipy.latin_hypercube import LatinHypercubeGenerator
-from xopt.generators.ga.cnsga import CNSGAGenerator
 
 COMM = MPI.COMM_WORLD
 rank = COMM.Get_rank()
 size = COMM.Get_size()
+
+# Constants
+BOUNDS = (-1.0, 1.0)
+NUM_ZEROS = 20
 
 
 def equation(x, y):
@@ -24,28 +27,9 @@ def evaluate(inputs):
   return {"f": float(equation(inputs["x"], inputs["y"]))}
 
 
-def select_maxmin_dispersion(candidates, k=20):
-  """Select k candidates that are maximally spread apart."""
-  if len(candidates) <= k:
-    return candidates
-
-  dist_matrix = cdist(candidates, candidates)
-  selected_indices = [0]
-  min_dists = dist_matrix[:, 0]
-
-  for _ in range(1, k):
-    next_idx = np.argmax(min_dists)
-    selected_indices.append(next_idx)
-    min_dists = np.minimum(min_dists, dist_matrix[:, next_idx])
-  return candidates[selected_indices]
-
-
 def split_into_grid(z):
-  """Split the grid into even sections, one section per processor"""
+  """Split the domain into an n x n grid of sections, one per processor."""
   n = math.isqrt(z)
-  if n * n != z:
-    raise ValueError("Number of processors must be a perfect square.")
-
   edges = np.linspace(-1, 1, n + 1)
   sections = []
   for i in range(n):
@@ -58,128 +42,161 @@ def split_into_grid(z):
 
   return sections
 
-def space_filter_data(df, min_dist=0.05):
-    """Filters data so no two points are closer than min_dist in parameter space."""
-    kept_rows = []
-    points = df[["x", "y"]].to_numpy()
+def select_maxmin_dispersion(candidates, k=NUM_ZEROS):
+  """Greedy farthest-point selection of k candidates."""
+  if len(candidates) <= k:
+    return candidates
 
-    for i, pt in enumerate(points):
-        if not kept_rows:
-            kept_rows.append(i)
-            continue
+  selected = [0]
+  min_dists = np.linalg.norm(candidates - candidates[0], axis=1)
+  for _ in range(1, k):
+    nxt = int(np.argmax(min_dists))
+    selected.append(nxt)
+    min_dists = np.minimum(
+        min_dists, np.linalg.norm(candidates - candidates[nxt], axis=1)
+    )
+  return candidates[selected]
 
-        # Distance to previously accepted points
-        dists = np.linalg.norm(points[kept_rows] - pt, axis=1)
-        if np.all(dists >= min_dist):
-            kept_rows.append(i)
 
-    return df.iloc[kept_rows]
+def space_filter_data(df):
+  """Remove points so that no two are closer than 0.02 apart"""
+  points = df[["x", "y"]].to_numpy()
+  kept = []
+  for i, pt in enumerate(points):
+    if not kept or np.all(np.linalg.norm(points[kept] - pt, axis=1) >= 0.02):
+      kept.append(i)
+  return df.iloc[kept]
+
+
+def reduce_seed_data(df, rng):
+  """Thin and cap the seed data: half the best points, half random."""
+  df = space_filter_data(df)
+  if len(df) <= 200:
+    return df
+
+  # Bias towards points that are close to 0 and than select 100 additional, regardless of closeness to 0.
+  best = df.nsmallest(100, "f")
+  rest = df.drop(best.index)
+  extra = rest.iloc[rng.choice(len(rest), 100, replace=False)]
+  return pd.concat([best, extra])
+
+# Presets for the  evaluation function
+evaluator = Evaluator(function=evaluate)
+  
+# Split the sample space into even spaces based on the numbe of processors  
+regions = split_into_grid(size)
 
 if rank == 0:
-  grid_sections = split_into_grid(size)
+  # Constrain x and y withing (-1,1) than encourage the exploration of the sample space for the LatinHypercubeGenerator random point generator
+  global_vocs = VOCS(
+    variables={
+        "x": list(BOUNDS),
+        "y": list(BOUNDS),
+    },
+    objectives={"f": "EXPLORE"},
+  )
+
+  lhs_generator = LatinHypercubeGenerator(vocs=global_vocs, batch_size=16384)
+
+  X_lhs = Xopt(vocs=global_vocs, generator=lhs_generator, evaluator=evaluator)
+
+  for _ in range(16384):
+    X_lhs.step()
+
+  pts_array = X_lhs.data[["x", "y", "f"]].copy().to_numpy()
+
+  global_data = pd.DataFrame(pts_array, columns=["x", "y", "f"])
+  chunks = []
+  for section in regions:
+    x1, x2 = section["x"]
+    y1, y2 = section["y"]
+    x_mask = (pts_array[:, 0] >= x1) & (
+        (pts_array[:, 0] < x2) if x2 < BOUNDS[1] else (pts_array[:, 0] <= x2)
+    )
+    y_mask = (pts_array[:, 1] >= y1) & (
+        (pts_array[:, 1] < y2) if y2 < BOUNDS[1] else (pts_array[:, 1] <= y2)
+    )
+    chunks.append(pts_array[x_mask & y_mask])
 else:
-  grid_sections = None
+  global_data = None
+  chunks = None
 
-local_section = COMM.scatter(grid_sections, root=0)
+local_block = COMM.scatter(chunks, root=0)
+region_df = pd.DataFrame(local_block, columns=["x", "y", "f"])
 
-evaluator = Evaluator(function=evaluate)
+local_section = regions[rank]
+x1, x2 = local_section["x"]
+y1, y2 = local_section["y"]
 
-x1, x2, y1, y2 = (
-    local_section["x"][0],
-    local_section["x"][1],
-    local_section["y"][0],
-    local_section["y"][1],
+print(
+    f"[rank {rank}] region x=[{x1:.3f}, {x2:.3f}] y=[{y1:.3f}, {y2:.3f}] "
+    f"with {len(region_df)} global LHS points",
+    flush=True,
 )
+
+rng = np.random.default_rng(rank)
+local_new = pd.DataFrame(columns=["x", "y", "f"])
+
+seed_df = reduce_seed_data(region_df[["x", "y", "f"]], rng)
+
 vocs = VOCS(
-    variables={"x": [x1, x2], "y": [y1, y2]}, objectives={"f": "EXPLORE"}
-)
-
-generator = LatinHypercubeGenerator(vocs=vocs, batch_size=2048)
-
-# Use the Latin Hypercube for sampling the subdomain
-X = Xopt(vocs=vocs, generator=generator, evaluator=evaluator)
-
-for _ in range(2048):
-  X.step()
-
-vocs_opt = VOCS(
     variables={"x": [x1, x2], "y": [y1, y2]},
     objectives={"f": "EXPLORE"},
-    constraints={"f": ["LESS_THAN", 0.01]}
+    constraints={"f": ["LESS_THAN", 0.01]},
 )
+generator = BayesianExplorationGenerator(vocs=vocs)
+X = Xopt(vocs=vocs, generator=generator, evaluator=evaluator, data=seed_df)
 
-ga_generator = BayesianExplorationGenerator(
-    vocs=vocs_opt
-)
+for i in range(40):
+    X.step()
 
-# Set parameters as attributes afterwards
-ga_generator.n_candidates = 10
+# keep only what BO added; the seed points already live in global_data
+local_new = X.data.iloc[len(seed_df):][["x", "y", "f"]]
 
-filtered_data = space_filter_data(X.data, min_dist=0.05)
+gathered = COMM.gather(local_new, root=0)
 
-X_opt = Xopt(
-    vocs=vocs_opt, generator=ga_generator, evaluator=evaluator, data=filtered_data
-)
-
-# Run 10 iterations of the model training
-for i in range(10):
-    print(f"Iteration {i+1}")
-    X_opt.generator.train_model()
-    X_opt.step()
-
-gathered_data_list = COMM.gather(X_opt.data, root=0)
-
+# Wait until all processors are done with 
 COMM.Barrier()
 
 if rank == 0:
-  df = pd.concat(gathered_data_list, ignore_index=True)
+  bo_df = pd.concat(gathered, ignore_index=True)
+  df = pd.concat([global_data[["x", "y", "f"]], bo_df], ignore_index=True)
 
-  threshold = 0.005
-  candidate_zeros = df[df["f"] < threshold][["x", "y"]].to_numpy()
-
+  candidate_zeros = df[df["f"] < 0.005][["x", "y"]].to_numpy()
   if len(candidate_zeros) < 30:
-     candidate_zeros = df.nsmallest(100, "f")[["x", "y"]].to_numpy()
+    candidate_zeros = df.nsmallest(100, "f")[["x", "y"]].to_numpy()
 
-# Pick 20 widely spread zeros
-  spread_20_zeros = select_maxmin_dispersion(candidate_zeros, k=20)
-
-
-# --- Plotting ---
-  fig, ax = plt.subplots(figsize=(8, 6))
-
-# Background contour plot
-  x_grid = np.linspace(-1, 1, 250)
-  y_grid = np.linspace(-1, 1, 250)
-  XX, YY = np.meshgrid(x_grid, y_grid)
-  ZZ = equation(XX, YY)
-
-  contour = ax.contourf(XX, YY, ZZ, levels=50, cmap="viridis")
-  plt.colorbar(contour, label="f(x, y)")
-
-  n = math.isqrt(size)
-  edges = np.linspace(-1, 1, n + 1)
-
-  for edge in edges:
-    ax.axhline(edge, color="white", linestyle="--", linewidth=1.2, alpha=0.8)
-    ax.axvline(edge, color="white", linestyle="--", linewidth=1.2, alpha=0.8)
-
-# Plot all sampled points as small translucent dots
-  ax.scatter(df["x"], df["y"], c="white", alpha=0.2, s=8, label="Sampled Points")
-
-# Plot the 20 maximally separated zeros
-  ax.scatter(
-     spread_20_zeros[:, 0],
-     spread_20_zeros[:, 1],
-     c="red",
-     marker="*",
-     s=120,
-     edgecolors="black",
-     linewidths=0.5,
-     label="20 Spread Zeros"
+  spread = select_maxmin_dispersion(candidate_zeros, k=NUM_ZEROS)
+  print(
+      f"Total points: {len(df)} (LHS {len(global_data)}, BO {len(bo_df)}); "
+      f"zeros found: {len(candidate_zeros)}"
   )
 
+  fig, ax = plt.subplots(figsize=(8, 6))
+  xg = np.linspace(*BOUNDS, 250)
+  XX, YY = np.meshgrid(xg, xg)
+  contour = ax.contourf(XX, YY, equation(XX, YY), levels=50, cmap="viridis")
+  plt.colorbar(contour, label="f(x, y)")
+
+  # outline each processor's region
+  for sec in regions:
+    rx1, rx2 = sec["x"]
+    ry1, ry2 = sec["y"]
+    ax.add_patch(Rectangle((rx1, ry1), rx2 - rx1, ry2 - ry1, fill=False,
+                           edgecolor="white", linestyle="--", linewidth=1.2,
+                           alpha=0.8))
+
+  ax.scatter(global_data["x"], global_data["y"], c="white", alpha=0.1, s=3, label="Global LHS points")
+
+  ax.scatter(bo_df["x"], bo_df["y"], c="orange", alpha=0.5, s=8, label="Bayesian exploration points")
+
+  ax.scatter(spread[:, 0], spread[:, 1], c="red", marker="*", s=120, edgecolor="black", linewidths=0.5, label=f"{NUM_ZEROS} spread zeros")
+
+  ax.set_xlim(*BOUNDS)
+  ax.set_ylim(*BOUNDS)
   ax.set_xlabel("x")
   ax.set_ylabel("y")
-  ax.set_title("20 Maximally Spread Zeros")
-  plt.savefig("plot_4.png", dpi=300, bbox_inches="tight")
+  ax.set_title(f"{NUM_ZEROS} Maximally Spread Zeros ({size} processors)")
+  ax.legend(loc="upper right", fontsize=8)
+  plt.savefig(f"plot_{size}.png", dpi=300, bbox_inches="tight")
   plt.close()

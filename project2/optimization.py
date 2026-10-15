@@ -105,6 +105,7 @@ if rank == 0:
 
   pts_array = X_lhs.data[["x", "y", "f"]].copy().to_numpy()
 
+  # Split the sampled points into what is given to each region
   global_data = pd.DataFrame(pts_array, columns=["x", "y", "f"])
   chunks = []
   for section in regions:

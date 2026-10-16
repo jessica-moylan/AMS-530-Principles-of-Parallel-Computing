@@ -1,0 +1,86 @@
+Xopt Configuration:
+
+            Xopt
+________________________________
+Version: 3.2.2
+Data size: 200
+Config as YAML:
+data_dump_file: null
+evaluator:
+  function: __main__.evaluate
+  function_kwargs: {}
+  max_workers: 1
+  vectorized: false
+generator:
+  computation_time: null
+  custom_objective: null
+  fixed_features: null
+  gp_constructor:
+    covar_modules: {}
+    custom_noise_prior: null
+    mean_modules: {}
+    name: standard
+    train_config: null
+    train_kwargs: null
+    train_method: lbfgs
+    train_model: true
+    trainable_mean_keys: []
+    transform_inputs: true
+    use_cached_hyperparameters: false
+    use_low_noise_prior: false
+  max_travel_distances: null
+  model: null
+  n_candidates: 1
+  n_interpolate_points: null
+  n_monte_carlo_samples: 128
+  name: bayesian_exploration
+  numerical_optimizer:
+    discrete_max_batch_size: 2048
+    discrete_max_choices: 4096
+    max_iter: 1000
+    max_time: 5.0
+    mixed_max_discrete_configurations: 512
+    n_restarts: 20
+    name: LBFGS
+  returns_id: false
+  supports_batch_generation: true
+  supports_constraints: true
+  supports_contextual_variables: true
+  supports_discrete_variables: true
+  supports_multi_objective: true
+  supports_no_objective: true
+  supports_single_objective: true
+  turbo_controller: null
+  use_cuda: false
+  vocs:
+    constants: {}
+    constraints:
+      f:
+        dtype: null
+        type: LessThanConstraint
+        value: 0.01
+    objectives:
+      f:
+        dtype: null
+        type: ExploreObjective
+    observables: {}
+    variables:
+      x:
+        default_value: null
+        domain:
+        - -1.0
+        - 0.0
+        dtype: null
+        type: ContinuousVariable
+      y:
+        default_value: null
+        domain:
+        - -1.0
+        - 0.0
+        dtype: null
+        type: ContinuousVariable
+serialize_inline: false
+serialize_torch: false
+stopping_condition: null
+strict: true
+xopt_dump_file: null

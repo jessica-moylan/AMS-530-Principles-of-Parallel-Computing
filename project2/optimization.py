@@ -156,7 +156,7 @@ local_new = X.data.iloc[len(seed_df):][["x", "y", "f"]]
 
 gathered = COMM.gather(local_new, root=0)
 
-# Wait until all processors are done with 
+# Wait until all processors are done 
 COMM.Barrier()
 
 if rank == 0:

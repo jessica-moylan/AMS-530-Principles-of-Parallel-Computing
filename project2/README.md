@@ -45,11 +45,11 @@ The general idea of the code is to sample the entire sample space at the start u
 
 This is crucial in the problem specifically since considering the highly oscillating nature of this function, and the large valley around (0,0), other sampling methods tended to get stuck. Additionally, with allowing each seperate processor to sample their own sub space, there tended to be a larger congrgation of samples near the edges of the region, which for processors that included the middle region, resulted in many many zeros being stuck there.
 
-Once the head processor, rank 0, finished sampling the sample space, the entre sample space was divided, evenly between each of the processors, and one region, and the sample points that belong to it was scattered between all processors. 
+Once the head processor, rank 0, finished sampling the sample space, the entre sample space was divided, evenly between each of the processors, and one region, and the sample points that belong to it was scattered between each processors. 
 
-In order to prevent our selected zeros from getting stuck, and to promote the exploration, these sample points were thinned. First, points had to be at minimum 0.02 away from each other. Next, between all of these remaining points, the best 100 points, where best is defined being closest to 0 were selected. Additionally, another 100 points were also randomly selected, so that the following Bayesian Exploration model would not get stuck.
+In order to prevent our selected zeros from getting stuck, and to promote the exploration, these sample points were thinned. First, points had to be at minimum 0.02 away from each other. Next, between all of these remaining points, the best 100 points, where best is defined being closest to 0 were selected. Additionally, another 100 points were also randomly selected, so that the following Bayesian Exploration model would not get stuck at these already known zero locations.
 
-After we thinned the data, we used the Bayesian Exploration Generator optimization, more information regarding the configuration of the Xopt agent can be found [here](/project2/results/additional_information.txt) that is also primed for exploration but with an additional constraint that it is looking for locations with results in u(x,y) < 0.01. This optimization is ran for 40 iterations. 
+After we thinned the data, we used the Bayesian Exploration Generator optimization, more information regarding the configuration of the Xopt agent can be found [here](/project2/results/additional_information.txt). That was also primed for exploration but with an additional constraint that it is looking for locations with results in u(x,y) < 0.01. This optimization is ran for 40 iterations. 
 
 The data is than collected back into processor 0 where the zeros that were found for each processor are analyzed and than are slected to be one of the 20 zeros required for the project if they are maximally spread out from each other. 
 
@@ -61,7 +61,7 @@ Define domain [-1, 1] for x and y and function u(x, y)
 IF rank == 0 THEN
     Setup global VOCS with variables x, y and objective "EXPLORE"
     Generate 16,384 points using Latin Hypercube Sampling (LHS)
-    Partition domain into a grid of size (n × n) so that there is one region per processormatching processor count
+    Partition domain into a grid of size (n × n) so that there is one region per processor
     Slice global LHS dataset into chunks corresponding to each subdomain region
 END IF
 

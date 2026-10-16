@@ -3,4 +3,5 @@ This is a collection of projects/homeworks that were completed for the AMS 530: 
 Directory:
 
 - [Project 1: Due 9/27/2026](project1)
+- [Project 2: Due 10/18/2026](project2)
 

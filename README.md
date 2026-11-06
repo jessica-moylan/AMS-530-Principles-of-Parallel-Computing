@@ -4,4 +4,4 @@ Directory:
 
 - [Project 1: Due 9/27/2026](project1)
 - [Project 2: Due 10/18/2026](project2)
-
+- [Project 3: Due 11/8/2026](project3)

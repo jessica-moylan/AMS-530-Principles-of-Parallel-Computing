@@ -1,0 +1,84 @@
+Starting Matrix Multiplication Benchmarks...
+=============================================
+---------------------------------------------
+Running with P = 4 cores, N = 256 matrix size
+---------------------------------------------
+Total execution time: 0.11227048299042508 seconds
+
+0.001429 seconds for serial baseline
+Does using Fox's algorithm result match the expected result?
+True
+
+---------------------------------------------
+Running with P = 4 cores, N = 1024 matrix size
+---------------------------------------------
+Total execution time: 0.13703871297184378 seconds
+
+0.076765 seconds for serial baseline
+Does using Fox's algorithm result match the expected result?
+True
+
+---------------------------------------------
+Running with P = 4 cores, N = 4096 matrix size
+---------------------------------------------
+Total execution time: 1.8818357849959284 seconds
+
+2.875673 seconds for serial baseline
+Does using Fox's algorithm result match the expected result?
+True
+
+---------------------------------------------
+Running with P = 16 cores, N = 256 matrix size
+---------------------------------------------
+Total execution time: 0.035518961027264595 seconds
+
+0.001863 seconds for serial baseline
+Does using Fox's algorithm result match the expected result?
+True
+
+---------------------------------------------
+Running with P = 16 cores, N = 1024 matrix size
+---------------------------------------------
+Total execution time: 0.09233963798033074 seconds
+
+0.083163 seconds for serial baseline
+Does using Fox's algorithm result match the expected result?
+True
+
+---------------------------------------------
+Running with P = 16 cores, N = 4096 matrix size
+---------------------------------------------
+Total execution time: 1.1356950729968958 seconds
+
+3.150861 seconds for serial baseline
+Does using Fox's algorithm result match the expected result?
+True
+
+---------------------------------------------
+Running with P = 64 cores, N = 256 matrix size
+---------------------------------------------
+Total execution time: 0.09483675297815353 seconds
+
+0.001665 seconds for serial baseline
+Does using Fox's algorithm result match the expected result?
+True
+
+---------------------------------------------
+Running with P = 64 cores, N = 1024 matrix size
+---------------------------------------------
+Total execution time: 0.10618440300459042 seconds
+
+0.077952 seconds for serial baseline
+Does using Fox's algorithm result match the expected result?
+True
+
+---------------------------------------------
+Running with P = 64 cores, N = 4096 matrix size
+---------------------------------------------
+Total execution time: 0.9033943910035305 seconds
+
+3.300294 seconds for serial baseline
+Does using Fox's algorithm result match the expected result?
+True
+
+All benchmarks completed!
